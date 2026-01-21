@@ -7,23 +7,25 @@ class IcsController < ApplicationV6Controller
     library_entries = @user.library_entries.wanna_watch_and_watching.where.not(program_id: nil)
 
     I18n.with_locale(@user.locale) do
-      @slots = Slot
-        .only_kept
-        .where(program_id: library_entries.pluck(:program_id))
-        .where("started_at >= ?", Date.today.beginning_of_day)
-        .where("started_at <= ?", 7.days.since.end_of_day)
-        .where.not(episode_id: nil)
-        .where.not(episode_id: library_entries.pluck(:watched_episode_ids).flatten)
+      Time.use_zone(@user.time_zone) do
+        @slots = Slot
+          .only_kept
+          .where(program_id: library_entries.pluck(:program_id))
+          .where("started_at >= ?", Time.zone.now.beginning_of_day)
+          .where("started_at <= ?", 7.days.since.end_of_day)
+          .where.not(episode_id: nil)
+          .where.not(episode_id: library_entries.pluck(:watched_episode_ids).flatten)
 
-      @works = @user
-        .works_on(:wanna_watch, :watching)
-        .only_kept
-        .where.not(started_on: nil)
+        @works = @user
+          .works_on(:wanna_watch, :watching)
+          .only_kept
+          .where.not(started_on: nil)
 
-      send_data(helpers.render_user_calendar(user: @user, slots: @slots, works: @works), {
-        type: "text/calendar",
-        filename: "annict.ics"
-      })
+        send_data(helpers.render_user_calendar(user: @user, slots: @slots, works: @works), {
+          type: "text/calendar",
+          filename: "annict.ics"
+        })
+      end
     end
   end
 end

@@ -202,4 +202,39 @@ RSpec.describe "GET /ics", type: :request do
     expect(response.body).to include("BEGIN:VCALENDAR")
     expect(response.body).to include("END:VCALENDAR")
   end
+
+  it "ユーザーのタイムゾーン設定に基づいて放送枠の範囲が決定されること" do
+    time_zone_jst = Time.find_zone!("Asia/Tokyo") # UTC+9
+    time_zone_taipei = Time.find_zone!("Asia/Taipei") # UTC+8
+
+    # ユーザーのタイムゾーンを Asia/Taipei (UTC+8) に設定
+    user = FactoryBot.create(:user, username: "test_user", time_zone: "Asia/Taipei")
+    work = FactoryBot.create(:work)
+    program = FactoryBot.create(:program, work:)
+    episode_a = FactoryBot.create(:episode, work:)
+    episode_b = FactoryBot.create(:episode, work:)
+
+    # 日本時間の 2026-01-10 00:00 と 2026-01-10 01:00 に放送枠を作成
+    jst_0am = time_zone_jst.local(2026, 1, 10, 0, 0, 0)
+    FactoryBot.create(:slot, program:, episode: episode_a, started_at: jst_0am)
+    jst_1am = time_zone_jst.local(2026, 1, 10, 1, 0, 0)
+    FactoryBot.create(:slot, program:, episode: episode_b, started_at: jst_1am)
+
+    status = FactoryBot.create(:status, user:, work:, kind: :watching)
+    FactoryBot.create(:library_entry, user:, program:, work:, status:)
+
+    travel_to time_zone_taipei.local(2026, 1, 10, 0, 0, 0) do
+      # ユーザーのタイムゾーンでの 2026-01-10 00:00 にリクエストを送信
+      get "/@#{user.username}/ics"
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include("X-WR-TIMEZONE:Asia/Taipei")
+
+      # slot_0am_jst はユーザーのタイムゾーンで 2026-01-09 23:00 に相当するため含まれない
+      expect(response.body).not_to include("/episodes/#{episode_a.id}")
+
+      # slot_1am_jst はユーザーのタイムゾーンで 2026-01-10 00:00 に相当するため含まれる
+      expect(response.body).to include("/episodes/#{episode_b.id}")
+    end
+  end
 end
